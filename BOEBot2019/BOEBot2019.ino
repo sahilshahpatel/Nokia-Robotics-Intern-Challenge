@@ -1000,21 +1000,29 @@ enum	fsm_state_enum {
 		//-----	Auto-advance state above; regular states below
 	FSM_STATE_IDLE		=  0,
 	FSM_STATE_START,		// Initial state when FSM is used
-	FSM_STATE_NEXT_TARGET,		// Retrieve next target and invoke Nav
-	FSM_STATE_LOOK_LEFT,		// Set turret to -90 and ping 1 second
-	FSM_STATE_LOOK_RIGHT,		// Set turret to  90 and ping 1 second
-	FSM_STATE_etc,
+  FSM_STATE_LOOK_RIGHT, // Check distance to right wall
+  FSM_STATE_LOOK_LEFT,  // Check distance to left wall]
+  FSM_CALIBRATION_DONE, // Set the turret to look North
+	FSM_STATE_NORTH,		// Approach obstacle
+	FSM_STATE_RIGHT_AFTER_NORTH,		// Turn robot right and turret left
+	FSM_STATE_LEFT_AFTER_NORTH,		// Turn robot left and turret right
+	FSM_STATE_SEARCHING,    // Drive along obstacle until hole is found
+  FSM_STATE_RIGHT_AFTER_SEARCHING,  // Turn robot right and turret left
+  FSM_STATE_LEFT_AFTER_SEARCHING,   // Turn robot left and turret right
 	FSM_STATE_DONE		= 99,	// Terminal state
 };
 
 int8_t	fsm_state = FSM_STATE_IDLE;
 int8_t	fsm_next_state;
 uint32_t	fsm_micros_timeout;
+int8_t close_threshold = 3;
+int8_t far_threshold = 5;
+int8_t init_dist_to_left_wall;
+int8_t init_dist_to_right_wall;
 
 /******************************************************************************/
-
 void Fsm_Run ()
-{
+{  
 	if (fsm_state < 0) {
 		switch (fsm_state) {
 		  case FSM_STATE_WAIT_NAV:
@@ -1047,39 +1055,34 @@ void Fsm_Run ()
 		break;
 
 	  case FSM_STATE_START:
-		turret_state = TURRET_STATE_IDLE;		// Disable conflicting functions
-		nav_route_auto = FALSE;
-		fsm_state = FSM_STATE_NEXT_TARGET;
-		break;
-
-	  case FSM_STATE_NEXT_TARGET:
-		Turret_Set_Angle (0);
-		if (Nav_Next_Target () > 0) {
-			fsm_state = FSM_STATE_WAIT_NAV;
-			fsm_next_state = FSM_STATE_LOOK_LEFT;
-		} else {
-			fsm_state = FSM_STATE_DONE;		// No more targets
-		}
+		turret_state = TURRET_STATE_IDLE;
+    Drive_Set_Speed(0, 0);
+    fsm_state = FSM_STATE_LOOK_LEFT;
 		break;
 
 	  case FSM_STATE_LOOK_LEFT:
-		Drive_Set_Speed (0, 0);
 		Turret_Set_Angle (-90);
-		fsm_state = FSM_STATE_WAIT_MICROS;
-		fsm_micros_timeout = micros() + 1000000;
+		fsm_state = FSM_STATE_WAIT_TURRET;
 		fsm_next_state = FSM_STATE_LOOK_RIGHT;
 		break;
 
 	  case FSM_STATE_LOOK_RIGHT:
-		Drive_Set_Speed (0, 0);
+    // TODO: read distance to left wall
 		Turret_Set_Angle (90);
-		fsm_state = FSM_STATE_WAIT_MICROS;
-		fsm_micros_timeout = micros() + 1000000;
-		fsm_next_state = FSM_STATE_NEXT_TARGET;
+		fsm_state = FSM_STATE_WAIT_TURRET;
+		fsm_next_state = FSM_STATE_CALIBRATION_DONE;
 		break;
 
-	  case FSM_STATE_etc:
-		break;
+    case: FSM_STATE_CALIBRATION_DONE:
+    // TODO: read distance to right wall
+    Turret_Set_Angle(0);
+    fsm_state = FSM_STATE_WAIT_TURRET;
+    fsm_next_state = FSM_STATE_NORTH;
+    break;
+    
+    case FSM_STATE_NORTH:
+    
+    break;
 
 	  case FSM_STATE_DONE:
 		Drive_Set_Speed (0, 0);
