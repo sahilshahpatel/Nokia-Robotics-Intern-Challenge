@@ -1002,7 +1002,7 @@ enum	fsm_state_enum {
 	FSM_STATE_START,		// Initial state when FSM is used
   FSM_STATE_LOOK_RIGHT, // Check distance to right wall
   FSM_STATE_LOOK_LEFT,  // Check distance to left wall]
-  FSM_CALIBRATION_DONE, // Set the turret to look North
+  FSM_STATE_CALIBRATION_DONE, // Set the turret to look North
 	FSM_STATE_NORTH,		// Approach obstacle
 	FSM_STATE_RIGHT_AFTER_NORTH,		// Turn robot right and turret left
 	FSM_STATE_LEFT_AFTER_NORTH,		// Turn robot left and turret right
@@ -1015,10 +1015,13 @@ enum	fsm_state_enum {
 int8_t	fsm_state = FSM_STATE_IDLE;
 int8_t	fsm_next_state;
 uint32_t	fsm_micros_timeout;
-int8_t close_threshold = 3;
-int8_t far_threshold = 5;
-int8_t init_dist_to_left_wall;
-int8_t init_dist_to_right_wall;
+
+// TODO: Test and set field variables and bot thresholds
+const int8_t FIELD_HEIGHT = 6; // Records height of field
+const int8_t CLOSE_THRESHOLD = 3; // Determines when to stop approaching obstacle in NORTH state
+const int8_t FAR_THRESHOLD = 5; // Determines when a hole has been reached in SEARCHING state
+int8_t INIT_DIST_TO_LEFT_WALL; // Used to decide whether to turn left or right
+int8_t INIT_DIST_TO_RIGHT_WALL; // Used to decide whether to turn left or right
 
 /******************************************************************************/
 void Fsm_Run ()
@@ -1067,21 +1070,57 @@ void Fsm_Run ()
 		break;
 
 	  case FSM_STATE_LOOK_RIGHT:
-    // TODO: read distance to left wall
+    INIT_DIST_TO_LEFT_WALL = ping_dist[0]; // read distance to left wall
 		Turret_Set_Angle (90);
 		fsm_state = FSM_STATE_WAIT_TURRET;
 		fsm_next_state = FSM_STATE_CALIBRATION_DONE;
 		break;
 
-    case: FSM_STATE_CALIBRATION_DONE:
-    // TODO: read distance to right wall
+    case FSM_STATE_CALIBRATION_DONE:
+    INIT_DIST_TO_RIGHT_WALL = ping_dist[0]; // read distance to right wall
     Turret_Set_Angle(0);
     fsm_state = FSM_STATE_WAIT_TURRET;
     fsm_next_state = FSM_STATE_NORTH;
     break;
     
     case FSM_STATE_NORTH:
-    
+    Drive_Set_Speed(50, 50); // Drive forward
+    // If moved far enough North to be done, exit
+    if (drive_pos_y > FIELD_HEIGHT){
+      fsm_state = FSM_STATE_DONE;
+    }
+    // Otherwise, if the bot reaches an obstacle...
+    else if (ping_dist[9] < CLOSE_THRESHOLD){
+      // If closer to right wall, turn left
+      if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x){
+        fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
+      }
+      // If closer to left wall, turn right
+      else{
+        fsm_state = FSM_STATE_RIGHT_AFTER_NORTH;
+      }
+    }
+    // Otherwise, remain in NORTH state
+    break;
+
+    case FSM_STATE_RIGHT_AFTER_NORTH:
+    // TODO
+    break;
+
+    case FSM_STATE_LEFT_AFTER_NORTH:
+    // TODO
+    break;
+
+    case FSM_STATE_SEARCHING:
+    // TODO
+    break;
+
+    case FSM_STATE_RIGHT_AFTER_SEARCHING:
+    // TODO
+    break;
+
+    case FSM_STATE_LEFT_AFTER_SEARCHING:
+    // TODO
     break;
 
 	  case FSM_STATE_DONE:
