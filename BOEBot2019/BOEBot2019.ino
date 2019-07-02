@@ -1120,6 +1120,20 @@ void Fsm_Run ()
 
     case FSM_STATE_SEARCHING:
     // TODO
+    //Setup speed
+     Drive_Set_Speed(50, 50); // Drive in the direction that bot already is in.
+    //Sensor is going to face north though, the bot will be either in left or right direction.
+    //Bot movement- left or right.
+    //If the latest ping distance is greater than the far threshold, we probably have identified a gap.
+    if (ping_dist[0] > FAR_THRESHOLD){
+      // If we are facing towards right, turn left
+      if (drive_pos_x > 0){
+        fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
+      }
+      If we are facing towards left, turn right
+      else{
+        fsm_state = FSM_STATE_RIGHT_AFTER_NORTH;
+      }
     break;
 
     case FSM_STATE_SEARCHING_REVERSE:
