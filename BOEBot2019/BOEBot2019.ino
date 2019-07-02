@@ -1008,11 +1008,14 @@ enum  fsm_state_enum {
   FSM_STATE_LOOK_LEFT,  // Check distance to left wall]
   FSM_STATE_CALIBRATION_DONE, // Set the turret to look North
   FSM_STATE_NORTH,    // Approach obstacle
+  FSM_STATE_TURN_AROUND, // If no gap found, turn 180 deg around
   FSM_STATE_RIGHT_AFTER_NORTH,    // Turn robot right and turret left
   FSM_STATE_LEFT_AFTER_NORTH,   // Turn robot left and turret right
-  FSM_STATE_SEARCHING,    // Drive along obstacle until hole is found
+  FSM_STATE_SEARCHING,    // Drive along obstacle until gap is found
+  FSM_STATE_SEARCHING_REVERSE, // Drive reverse along obstacle until gap is found
   FSM_STATE_RIGHT_AFTER_SEARCHING,  // Turn robot right and turret left
   FSM_STATE_LEFT_AFTER_SEARCHING,   // Turn robot left and turret right
+  // TODO: Might need states for self correction if robot isn't moving exactly in cardinal direction
   FSM_STATE_DONE    = 99, // Terminal state
 };
 
@@ -1094,7 +1097,7 @@ void Fsm_Run ()
       fsm_state = FSM_STATE_DONE;
     }
     // Otherwise, if the bot reaches an obstacle...
-    else if (ping_dist[9] < CLOSE_THRESHOLD){
+    else if (ping_dist[0] < CLOSE_THRESHOLD){
       // If closer to right wall, turn left
       if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x){
         fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
@@ -1119,11 +1122,19 @@ void Fsm_Run ()
     // TODO
     break;
 
+    case FSM_STATE_SEARCHING_REVERSE:
+    // TODO
+    break;
+
     case FSM_STATE_RIGHT_AFTER_SEARCHING:
     // TODO
     break;
 
     case FSM_STATE_LEFT_AFTER_SEARCHING:
+    // TODO
+    break;
+
+    case FSM_STATE_TURN_AROUND:
     // TODO
     break;
 
