@@ -994,107 +994,149 @@ void Irrx_Results () {
 //	Functions
 //		Fsm_Run
 
-enum	fsm_state_enum {
-	// The first three (negative value) states are special transient states.
-	// FSM will automatically advance to next state when condition is satisfied.
+enum  fsm_state_enum {
+  // The first three (negative value) states are special transient states.
+  // FSM will automatically advance to next state when condition is satisfied.
 
-	FSM_STATE_WAIT_NAV	= -3,	// Wait for nav_state == ARRIVED
-	FSM_STATE_WAIT_TURRET	= -2,	// Wait for turret rotation completion
-	FSM_STATE_WAIT_MICROS	= -1,	// Wait for micros() >= fsm_micros_timeout
-		//-----	Auto-advance state above; regular states below
-	FSM_STATE_IDLE		=  0,
-	FSM_STATE_START,		// Initial state when FSM is used
-	FSM_STATE_NEXT_TARGET,		// Retrieve next target and invoke Nav
-	FSM_STATE_LOOK_LEFT,		// Set turret to -90 and ping 1 second
-	FSM_STATE_LOOK_RIGHT,		// Set turret to  90 and ping 1 second
-	FSM_STATE_etc,
-	FSM_STATE_DONE		= 99,	// Terminal state
+  FSM_STATE_WAIT_NAV  = -3, // Wait for nav_state == ARRIVED
+  FSM_STATE_WAIT_TURRET = -2, // Wait for turret rotation completion
+  FSM_STATE_WAIT_MICROS = -1, // Wait for micros() >= fsm_micros_timeout
+    //----- Auto-advance state above; regular states below
+  FSM_STATE_IDLE    =  0,
+  FSM_STATE_START,    // Initial state when FSM is used
+  FSM_STATE_LOOK_RIGHT, // Check distance to right wall
+  FSM_STATE_LOOK_LEFT,  // Check distance to left wall]
+  FSM_STATE_CALIBRATION_DONE, // Set the turret to look North
+  FSM_STATE_NORTH,    // Approach obstacle
+  FSM_STATE_RIGHT_AFTER_NORTH,    // Turn robot right and turret left
+  FSM_STATE_LEFT_AFTER_NORTH,   // Turn robot left and turret right
+  FSM_STATE_SEARCHING,    // Drive along obstacle until hole is found
+  FSM_STATE_RIGHT_AFTER_SEARCHING,  // Turn robot right and turret left
+  FSM_STATE_LEFT_AFTER_SEARCHING,   // Turn robot left and turret right
+  FSM_STATE_DONE    = 99, // Terminal state
 };
 
-int8_t	fsm_state = FSM_STATE_IDLE;
-int8_t	fsm_next_state;
-uint32_t	fsm_micros_timeout;
+int8_t  fsm_state = FSM_STATE_IDLE;
+int8_t  fsm_next_state;
+uint32_t  fsm_micros_timeout;
+
+// TODO: Test and set field variables and bot thresholds
+const int8_t FIELD_HEIGHT = 6; // Records height of field
+const int8_t CLOSE_THRESHOLD = 3; // Determines when to stop approaching obstacle in NORTH state
+const int8_t FAR_THRESHOLD = 5; // Determines when a hole has been reached in SEARCHING state
+int8_t INIT_DIST_TO_LEFT_WALL; // Used to decide whether to turn left or right
+int8_t INIT_DIST_TO_RIGHT_WALL; // Used to decide whether to turn left or right
 
 /******************************************************************************/
-
 void Fsm_Run ()
-{
-	if (fsm_state < 0) {
-		switch (fsm_state) {
-		  case FSM_STATE_WAIT_NAV:
-			if (nav_state == NAV_STATE_ARRIVED)
-				fsm_state = fsm_next_state;
-			break;
+{  
+  if (fsm_state < 0) {
+    switch (fsm_state) {
+      case FSM_STATE_WAIT_NAV:
+      if (nav_state == NAV_STATE_ARRIVED)
+        fsm_state = fsm_next_state;
+      break;
 
-		  case FSM_STATE_WAIT_TURRET:
-			if (micros() >= turret_arrive_time)
-				fsm_state = fsm_next_state;
-			break;
+      case FSM_STATE_WAIT_TURRET:
+      if (micros() >= turret_arrive_time)
+        fsm_state = fsm_next_state;
+      break;
 
-		  case FSM_STATE_WAIT_MICROS:
-			if (micros() >= fsm_micros_timeout)
-				fsm_state = fsm_next_state;
-			break;
+      case FSM_STATE_WAIT_MICROS:
+      if (micros() >= fsm_micros_timeout)
+        fsm_state = fsm_next_state;
+      break;
 
-		  default:
-			// Should never get here.
-			break;
-		}
+      default:
+      // Should never get here.
+      break;
+    }
 
-		if (fsm_state < 0) {		// Still waiting
-			return;
-		}
-	}
+    if (fsm_state < 0) {    // Still waiting
+      return;
+    }
+  }
 
-	switch (fsm_state) {
-	  case FSM_STATE_IDLE:
-		break;
+  switch (fsm_state) {
+    case FSM_STATE_IDLE:
+    break;
 
-	  case FSM_STATE_START:
-		turret_state = TURRET_STATE_IDLE;		// Disable conflicting functions
-		nav_route_auto = FALSE;
-		fsm_state = FSM_STATE_NEXT_TARGET;
-		break;
+    case FSM_STATE_START:
+    turret_state = TURRET_STATE_IDLE;
+    Drive_Set_Speed(0, 0);
+    fsm_state = FSM_STATE_LOOK_LEFT;
+    break;
 
-	  case FSM_STATE_NEXT_TARGET:
-		Turret_Set_Angle (0);
-		if (Nav_Next_Target () > 0) {
-			fsm_state = FSM_STATE_WAIT_NAV;
-			fsm_next_state = FSM_STATE_LOOK_LEFT;
-		} else {
-			fsm_state = FSM_STATE_DONE;		// No more targets
-		}
-		break;
+    case FSM_STATE_LOOK_LEFT:
+    Turret_Set_Angle (-90);
+    fsm_state = FSM_STATE_WAIT_TURRET;
+    fsm_next_state = FSM_STATE_LOOK_RIGHT;
+    break;
 
-	  case FSM_STATE_LOOK_LEFT:
-		Drive_Set_Speed (0, 0);
-		Turret_Set_Angle (-90);
-		fsm_state = FSM_STATE_WAIT_MICROS;
-		fsm_micros_timeout = micros() + 1000000;
-		fsm_next_state = FSM_STATE_LOOK_RIGHT;
-		break;
+    case FSM_STATE_LOOK_RIGHT:
+    INIT_DIST_TO_LEFT_WALL = ping_dist[0]; // read distance to left wall
+    Turret_Set_Angle (90);
+    fsm_state = FSM_STATE_WAIT_TURRET;
+    fsm_next_state = FSM_STATE_CALIBRATION_DONE;
+    break;
 
-	  case FSM_STATE_LOOK_RIGHT:
-		Drive_Set_Speed (0, 0);
-		Turret_Set_Angle (90);
-		fsm_state = FSM_STATE_WAIT_MICROS;
-		fsm_micros_timeout = micros() + 1000000;
-		fsm_next_state = FSM_STATE_NEXT_TARGET;
-		break;
+    case FSM_STATE_CALIBRATION_DONE:
+    INIT_DIST_TO_RIGHT_WALL = ping_dist[0]; // read distance to right wall
+    Turret_Set_Angle(0);
+    fsm_state = FSM_STATE_WAIT_TURRET;
+    fsm_next_state = FSM_STATE_NORTH;
+    break;
+    
+    case FSM_STATE_NORTH:
+    Drive_Set_Speed(50, 50); // Drive forward
+    // If moved far enough North to be done, exit
+    if (drive_pos_y > FIELD_HEIGHT){
+      fsm_state = FSM_STATE_DONE;
+    }
+    // Otherwise, if the bot reaches an obstacle...
+    else if (ping_dist[9] < CLOSE_THRESHOLD){
+      // If closer to right wall, turn left
+      if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x){
+        fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
+      }
+      // If closer to left wall, turn right
+      else{
+        fsm_state = FSM_STATE_RIGHT_AFTER_NORTH;
+      }
+    }
+    // Otherwise, remain in NORTH state
+    break;
 
-	  case FSM_STATE_etc:
-		break;
+    case FSM_STATE_RIGHT_AFTER_NORTH:
+    // TODO
+    break;
 
-	  case FSM_STATE_DONE:
-		Drive_Set_Speed (0, 0);
-		turret_state = TURRET_STATE_IDLE;
-		break;
+    case FSM_STATE_LEFT_AFTER_NORTH:
+    // TODO
+    break;
 
-	  default:
-		// Probably should never get here.
-		break;
-	}
-}  /* Fsm_Run */
+    case FSM_STATE_SEARCHING:
+    // TODO
+    break;
+
+    case FSM_STATE_RIGHT_AFTER_SEARCHING:
+    // TODO
+    break;
+
+    case FSM_STATE_LEFT_AFTER_SEARCHING:
+    // TODO
+    break;
+
+    case FSM_STATE_DONE:
+    Drive_Set_Speed (0, 0);
+    turret_state = TURRET_STATE_IDLE;
+    break;
+
+    default:
+    // Probably should never get here.
+    break;
+  }
+} /* Fsm_Run */
 
 /******************************************************************************
  ******************************************************************************
