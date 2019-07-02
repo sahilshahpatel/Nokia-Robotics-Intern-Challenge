@@ -1,4 +1,4 @@
-// TLC Summer Intern Robot Challenge template software, Version 2019-06-27
+// TLC Summer Intern Robot Challenge template software, Version 2019-07-02
 // Lyle Kipp and Alejandro Kapauan
 //
 // Software for a Parallax BoE-Bot controlled by an Arduino Uno, including:
@@ -456,6 +456,15 @@ int8_t Nav_Get_Target (struct nav_target_t *target)
 /******************************************************************************/
 // Nav_Set_Target
 // 	Initialize the navigation module based on the nav_target_t parameter
+//
+//	NAV_COORD and NAV_FORWARD both set nav_state=NAV_STATE_XY, which uses
+//	the PID controller.
+//	For NAV_FORWARD, compute the (x,y) coordinates of a point 4 inches
+//	beyond the requested target.  Then drive with a 4-inch tollerance.
+//
+//	NAV_HEAD and NAV_TURN both set nav_state=NAV_STATE_TURN_[L,R].
+//	Both compute the number of radians to turn (>0 for left, <0 for right).
+//	That is converted into units of wheel ticks in Nav_Do_Controller.
 
 void Nav_Set_Target (struct nav_target_t *target)
 {
@@ -472,8 +481,8 @@ void Nav_Set_Target (struct nav_target_t *target)
 
 	  case NAV_FORWARD:
 		nav_target_speed	= target->speed;
-		temp			= target->param1 + 4.0;
-		if (nav_target_speed < 0)	temp = -temp;
+		if (target->param1 > 0)	temp = target->param1 + 4.0;
+		else			temp = target->param1 - 4.0;
 		nav_target_x		= drive_pos_x + drive_pos_cos * temp;
 		nav_target_y		= drive_pos_y + drive_pos_sin * temp;
 		nav_target_tol		= 4.0;
@@ -526,16 +535,13 @@ int8_t Nav_Next_Target ()
 
 void Nav_Do_Controller (int8_t operation)
 {
+	double diff_x, diff_y;		// Local PID (NAV_STATE_XY) variables
 	static double error = 0.0;
 	static double sum_error = 0.0;
 	double old_error;
+	double Pterm, Iterm, Dterm, PIDterm;
 
-	double Pterm, Iterm, Dterm;
-	static float PIDterm = 0.0;
-
-	double diff_x, diff_y;
-
-	static int32_t	tickdiff;
+	static int32_t	tickdiff;	// Target tick difference for NAV_STATE_TURN_[L,R]
 
 	if (operation == NAV_CONTROLLER_INIT) {
 		switch (nav_state) {
@@ -595,7 +601,7 @@ void Nav_Do_Controller (int8_t operation)
 			// Note that both wheels could tick, so we can't divide the tick distance by 2
 			//
 			// To avoid trig functions, use sin with the small angle approximation
-			// Even for large angles, the error from this approximation is negligible (< than 0.5 * DRIVE_TICK_DIST)
+			// Even for large angles, the error from this approximation is negligible ( < 0.5 * DRIVE_TICK_DIST)
 			//
 			// Since the angle error can become large as the distance goes to zero, wheel speeds are not adjusted for error
 
@@ -847,12 +853,11 @@ void Ping_Results () {
 	ping_state = PING_STATE_IDLE;
 	ping_echo_time = 0;
 
-#if 0
 	// Generate the sorted array indices.
 	// First, add 1 to previous indices to match data slide; also, find the entry that slid off the end
 	j = 9;
 	for (i = 0; i < 10; i++) {
-		if (ping_sort10[i] = 9)
+		if (ping_sort10[i] == 9)
 			j = i;
 		else
 			ping_sort10[i]++;
@@ -867,7 +872,7 @@ void Ping_Results () {
 
 	// The last element of ping_sort10[] is now unused.  Do an insertion sort
 	i = 9;
-	while ((ping_dist[ping_sort10[i-1]] > ping_dist[0]) && (i > 0)) {
+	while ((i > 0) && (ping_dist[ping_sort10[i-1]] > ping_dist[0])) {
 		ping_sort10[i] = ping_sort10[i-1];
 		i--;
 	}
@@ -875,11 +880,10 @@ void Ping_Results () {
 
 	// Generate ping_sort5 from ping_sort10
 	j = 0;
-	for (i = 1; i < 10; i++) {
+	for (i = 0; i < 10; i++) {
 		if (ping_sort10[i] <= 4)
 			ping_sort5[j++] = ping_sort10[i];
 	}
-#endif
 }  /* Ping_Results */
 
 /******************************************************************************
@@ -1000,15 +1004,10 @@ enum	fsm_state_enum {
 		//-----	Auto-advance state above; regular states below
 	FSM_STATE_IDLE		=  0,
 	FSM_STATE_START,		// Initial state when FSM is used
-  FSM_STATE_LOOK_RIGHT, // Check distance to right wall
-  FSM_STATE_LOOK_LEFT,  // Check distance to left wall]
-  FSM_STATE_CALIBRATION_DONE, // Set the turret to look North
-	FSM_STATE_NORTH,		// Approach obstacle
-	FSM_STATE_RIGHT_AFTER_NORTH,		// Turn robot right and turret left
-	FSM_STATE_LEFT_AFTER_NORTH,		// Turn robot left and turret right
-	FSM_STATE_SEARCHING,    // Drive along obstacle until hole is found
-  FSM_STATE_RIGHT_AFTER_SEARCHING,  // Turn robot right and turret left
-  FSM_STATE_LEFT_AFTER_SEARCHING,   // Turn robot left and turret right
+	FSM_STATE_NEXT_TARGET,		// Retrieve next target and invoke Nav
+	FSM_STATE_LOOK_LEFT,		// Set turret to -90 and ping 1 second
+	FSM_STATE_LOOK_RIGHT,		// Set turret to  90 and ping 1 second
+	FSM_STATE_etc,
 	FSM_STATE_DONE		= 99,	// Terminal state
 };
 
@@ -1016,16 +1015,10 @@ int8_t	fsm_state = FSM_STATE_IDLE;
 int8_t	fsm_next_state;
 uint32_t	fsm_micros_timeout;
 
-// TODO: Test and set field variables and bot thresholds
-const int8_t FIELD_HEIGHT = 6; // Records height of field
-const int8_t CLOSE_THRESHOLD = 3; // Determines when to stop approaching obstacle in NORTH state
-const int8_t FAR_THRESHOLD = 5; // Determines when a hole has been reached in SEARCHING state
-int8_t INIT_DIST_TO_LEFT_WALL; // Used to decide whether to turn left or right
-int8_t INIT_DIST_TO_RIGHT_WALL; // Used to decide whether to turn left or right
-
 /******************************************************************************/
+
 void Fsm_Run ()
-{  
+{
 	if (fsm_state < 0) {
 		switch (fsm_state) {
 		  case FSM_STATE_WAIT_NAV:
@@ -1058,70 +1051,39 @@ void Fsm_Run ()
 		break;
 
 	  case FSM_STATE_START:
-		turret_state = TURRET_STATE_IDLE;
-    Drive_Set_Speed(0, 0);
-    fsm_state = FSM_STATE_LOOK_LEFT;
+		turret_state = TURRET_STATE_IDLE;		// Disable conflicting functions
+		nav_route_auto = FALSE;
+		fsm_state = FSM_STATE_NEXT_TARGET;
+		break;
+
+	  case FSM_STATE_NEXT_TARGET:
+		Turret_Set_Angle (0);
+		if (Nav_Next_Target () > 0) {
+			fsm_state = FSM_STATE_WAIT_NAV;
+			fsm_next_state = FSM_STATE_LOOK_LEFT;
+		} else {
+			fsm_state = FSM_STATE_DONE;		// No more targets
+		}
 		break;
 
 	  case FSM_STATE_LOOK_LEFT:
+		Drive_Set_Speed (0, 0);
 		Turret_Set_Angle (-90);
-		fsm_state = FSM_STATE_WAIT_TURRET;
+		fsm_state = FSM_STATE_WAIT_MICROS;
+		fsm_micros_timeout = micros() + 1000000;
 		fsm_next_state = FSM_STATE_LOOK_RIGHT;
 		break;
 
 	  case FSM_STATE_LOOK_RIGHT:
-    INIT_DIST_TO_LEFT_WALL = ping_dist[0]; // read distance to left wall
+		Drive_Set_Speed (0, 0);
 		Turret_Set_Angle (90);
-		fsm_state = FSM_STATE_WAIT_TURRET;
-		fsm_next_state = FSM_STATE_CALIBRATION_DONE;
+		fsm_state = FSM_STATE_WAIT_MICROS;
+		fsm_micros_timeout = micros() + 1000000;
+		fsm_next_state = FSM_STATE_NEXT_TARGET;
 		break;
 
-    case FSM_STATE_CALIBRATION_DONE:
-    INIT_DIST_TO_RIGHT_WALL = ping_dist[0]; // read distance to right wall
-    Turret_Set_Angle(0);
-    fsm_state = FSM_STATE_WAIT_TURRET;
-    fsm_next_state = FSM_STATE_NORTH;
-    break;
-    
-    case FSM_STATE_NORTH:
-    Drive_Set_Speed(50, 50); // Drive forward
-    // If moved far enough North to be done, exit
-    if (drive_pos_y > FIELD_HEIGHT){
-      fsm_state = FSM_STATE_DONE;
-    }
-    // Otherwise, if the bot reaches an obstacle...
-    else if (ping_dist[9] < CLOSE_THRESHOLD){
-      // If closer to right wall, turn left
-      if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x){
-        fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
-      }
-      // If closer to left wall, turn right
-      else{
-        fsm_state = FSM_STATE_RIGHT_AFTER_NORTH;
-      }
-    }
-    // Otherwise, remain in NORTH state
-    break;
-
-    case FSM_STATE_RIGHT_AFTER_NORTH:
-    // TODO
-    break;
-
-    case FSM_STATE_LEFT_AFTER_NORTH:
-    // TODO
-    break;
-
-    case FSM_STATE_SEARCHING:
-    // TODO
-    break;
-
-    case FSM_STATE_RIGHT_AFTER_SEARCHING:
-    // TODO
-    break;
-
-    case FSM_STATE_LEFT_AFTER_SEARCHING:
-    // TODO
-    break;
+	  case FSM_STATE_etc:
+		break;
 
 	  case FSM_STATE_DONE:
 		Drive_Set_Speed (0, 0);
