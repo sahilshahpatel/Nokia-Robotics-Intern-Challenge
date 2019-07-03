@@ -1023,7 +1023,7 @@ int8_t  fsm_next_state; // Used only for Auto-advance states
 uint32_t  fsm_micros_timeout; // Used for WAIT_MICROS state
 
 // TODO: Test and set field variables and bot thresholds
-const int8_t FIELD_HEIGHT = 6; // Records height of field
+const int8_t FIELD_HEIGHT = 72; // Records height of field
 const int8_t CLOSE_THRESHOLD = 3; // Determines when to stop approaching obstacle in NORTH state
 const int8_t FAR_THRESHOLD = 5; // Determines when a gap has been reached in SEARCHING state
 const int8_t HEADING_TOLERANCE = M_PI / 12; // Tolerance used to detect direction of heading
