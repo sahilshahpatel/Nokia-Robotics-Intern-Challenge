@@ -1008,7 +1008,6 @@ enum  fsm_state_enum {
   FSM_STATE_LOOK_LEFT,  // Check distance to left wall]
   FSM_STATE_CALIBRATION_DONE, // Set the turret to look North
   FSM_STATE_NORTH,    // Approach obstacle
-  FSM_STATE_TURN_AROUND, // If no gap found, turn 180 deg around
   FSM_STATE_RIGHT_AFTER_NORTH,    // Turn robot right and turret left
   FSM_STATE_LEFT_AFTER_NORTH,   // Turn robot left and turret right
   FSM_STATE_SEARCHING,    // Drive along obstacle until gap is found
@@ -1026,7 +1025,9 @@ uint32_t  fsm_micros_timeout;
 // TODO: Test and set field variables and bot thresholds
 const int8_t FIELD_HEIGHT = 6; // Records height of field
 const int8_t CLOSE_THRESHOLD = 3; // Determines when to stop approaching obstacle in NORTH state
-const int8_t FAR_THRESHOLD = 5; // Determines when a hole has been reached in SEARCHING state
+const int8_t FAR_THRESHOLD = 5; // Determines when a gap has been reached in SEARCHING state
+const int8_t HEADING_TOLERANCE = M_PI / 12; // Tolerance used to detect direction of heading
+const int8_t DRIVE_SPEED = 50; // Determines the default drive speed set in FSM
 int8_t INIT_DIST_TO_LEFT_WALL; // Used to decide whether to turn left or right
 int8_t INIT_DIST_TO_RIGHT_WALL; // Used to decide whether to turn left or right
 
@@ -1091,7 +1092,7 @@ void Fsm_Run ()
     break;
     
     case FSM_STATE_NORTH:
-    Drive_Set_Speed(50, 50); // Drive forward
+    Drive_Set_Speed(DRIVE_SPEED, DRIVE_SPEED); // Drive forward
     // If moved far enough North to be done, exit
     if (drive_pos_y > FIELD_HEIGHT){
       fsm_state = FSM_STATE_DONE;
@@ -1123,7 +1124,23 @@ void Fsm_Run ()
     break;
 
     case FSM_STATE_SEARCHING_REVERSE:
-    // TODO
+    Drive_Set_Speed(-1*DRIVE_SPEED, -1*DRIVE_SPEED); // Drive backwards
+    // If moved far enough to either side, go to SEARCHING again
+    if (INIT_DIST_TO_RIGHT_WALL - drive_pos_x < CLOSE_THRESHOLD || INIT_DIST_TO_LEFT_WALL + drive_pos_x < CLOSE_THRESHOLD){
+      fsm_state = FSM_STATE_SEARCHING;
+    }
+    // Otherwise, if the bot reaches a gap...
+    else if (ping_dist[0] > FAR_THRESHOLD){
+      // If heading east (0 radians), turn left
+      if (drive_pos_heading < 0 + HEADING_TOLERANCE && drive_pos_heading > 0 - HEADING_TOLERANCE){
+        fsm_state = FSM_STATE_LEFT_AFTER_SEARCHING;
+      }
+      // If heading west (PI radians), turn right
+      else{
+        fsm_state = FSM_STATE_RIGHT_AFTER_SEARCHING;
+      }
+    }
+    // Otherwise, remain in SEARCHING_REVERSE state
     break;
 
     case FSM_STATE_RIGHT_AFTER_SEARCHING:
@@ -1131,10 +1148,6 @@ void Fsm_Run ()
     break;
 
     case FSM_STATE_LEFT_AFTER_SEARCHING:
-    // TODO
-    break;
-
-    case FSM_STATE_TURN_AROUND:
     // TODO
     break;
 
