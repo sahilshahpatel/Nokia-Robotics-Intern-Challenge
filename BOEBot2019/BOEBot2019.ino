@@ -1001,7 +1001,7 @@ enum  fsm_state_enum {
   FSM_STATE_WAIT_NAV  = -3, // Wait for nav_state == ARRIVED
   FSM_STATE_WAIT_TURRET = -2, // Wait for turret rotation completion
   FSM_STATE_WAIT_MICROS = -1, // Wait for micros() >= fsm_micros_timeout
-    //----- Auto-advance state above; regular states below
+    //----- Auto-advance states above; regular states below
   FSM_STATE_IDLE    =  0,
   FSM_STATE_START,    // Initial state when FSM is used
   FSM_STATE_LOOK_RIGHT, // Check distance to right wall
@@ -1015,12 +1015,12 @@ enum  fsm_state_enum {
   FSM_STATE_RIGHT_AFTER_SEARCHING,  // Turn robot right and turret left
   FSM_STATE_LEFT_AFTER_SEARCHING,   // Turn robot left and turret right
   // TODO: Might need states for self correction if robot isn't moving exactly in cardinal direction
-  FSM_STATE_DONE    = 99, // Terminal state
+  FSM_STATE_DONE = 99, // Terminal state
 };
 
 int8_t  fsm_state = FSM_STATE_IDLE;
-int8_t  fsm_next_state;
-uint32_t  fsm_micros_timeout;
+int8_t  fsm_next_state; // Used only for Auto-advance states
+uint32_t  fsm_micros_timeout; // Used for WAIT_MICROS state
 
 // TODO: Test and set field variables and bot thresholds
 const int8_t FIELD_HEIGHT = 6; // Records height of field
@@ -1112,25 +1112,51 @@ void Fsm_Run ()
     break;
 
     case FSM_STATE_RIGHT_AFTER_NORTH:
-    // TODO
+    Drive_Set_Speed(DRIVE_SPEED, -DRIVE_SPEED);
+    // If facing east (0 radians), stop turning. Tolerance halved when turning.
+    if (drive_pos_heading < 0 + HEADING_TOLERANCE/2 && drive_pos_heading > 0 - HEADING_TOLERANCE/2){
+      // Turn turret, then go SEARCHING
+      Turret_Set_Angle(-90);
+      fsm_state = FSM_STATE_WAIT_TURRET;
+      fsm_next_state = FSM_STATE_SEARCHING;
+    }
     break;
 
     case FSM_STATE_LEFT_AFTER_NORTH:
-    // TODO
+    Drive_Set_Speed(-DRIVE_SPEED, DRIVE_SPEED);
+    // If facing west (PI radians), stop turning. Tolerance halved when turning.
+    if (drive_pos_heading < M_PI + HEADING_TOLERANCE/2 && drive_pos_heading > M_PI - HEADING_TOLERANCE/2){
+      // Turn turret, then go SEARCHING
+      Turret_Set_Angle(90);
+      fsm_state = FSM_STATE_WAIT_TURRET;
+      fsm_next_state = FSM_STATE_SEARCHING;
+    }
     break;
 
     case FSM_STATE_SEARCHING:
-    // TODO
-    break;
-
-    case FSM_STATE_SEARCHING_REVERSE:
-    Drive_Set_Speed(-1*DRIVE_SPEED, -1*DRIVE_SPEED); // Drive backwards
-    // If moved far enough to either side, go to SEARCHING again
+    Drive_Set_Speed(DRIVE_SPEED, DRIVE_SPEED); // Drive forwards
+    // If moved far enough to either side, go to SEARCHING_REVERSE
     if (INIT_DIST_TO_RIGHT_WALL - drive_pos_x < CLOSE_THRESHOLD || INIT_DIST_TO_LEFT_WALL + drive_pos_x < CLOSE_THRESHOLD){
-      fsm_state = FSM_STATE_SEARCHING;
+      fsm_state = FSM_STATE_SEARCHING_REVERSE;
     }
     // Otherwise, if the bot reaches a gap...
     else if (ping_dist[0] > FAR_THRESHOLD){
+      // If heading east (0 radians), turn left
+      if (drive_pos_heading < HEADING_TOLERANCE && drive_pos_heading > HEADING_TOLERANCE){
+        fsm_state = FSM_STATE_LEFT_AFTER_SEARCHING;
+      }
+      // If heading west (PI radians), turn right
+      else{
+        fsm_state = FSM_STATE_RIGHT_AFTER_SEARCHING;
+      }
+    }
+    // Otherwise, remain in SEARCHING state
+    break;
+
+    case FSM_STATE_SEARCHING_REVERSE:
+    Drive_Set_Speed(-DRIVE_SPEED, -DRIVE_SPEED); // Drive backwards
+    // If the bot reaches a gap...
+    if (ping_dist[0] > FAR_THRESHOLD){
       // If heading east (0 radians), turn left
       if (drive_pos_heading < 0 + HEADING_TOLERANCE && drive_pos_heading > 0 - HEADING_TOLERANCE){
         fsm_state = FSM_STATE_LEFT_AFTER_SEARCHING;
@@ -1144,11 +1170,25 @@ void Fsm_Run ()
     break;
 
     case FSM_STATE_RIGHT_AFTER_SEARCHING:
-    // TODO
+    Drive_Set_Speed(DRIVE_SPEED, -DRIVE_SPEED);
+    // If facing north (PI/2 radians), stop turning. Tolerance halved when turning.
+    if (drive_pos_heading < M_PI/2 + HEADING_TOLERANCE/2 && drive_pos_heading > M_PI/2 - HEADING_TOLERANCE/2){
+      // Turn turret, then go SEARCHING
+      Turret_Set_Angle(0);
+      fsm_state = FSM_STATE_WAIT_TURRET;
+      fsm_next_state = FSM_STATE_NORTH;
+    }
     break;
 
     case FSM_STATE_LEFT_AFTER_SEARCHING:
-    // TODO
+    Drive_Set_Speed(-DRIVE_SPEED, DRIVE_SPEED);
+    // If facing north (PI/2 radians), stop turning. Tolerance halved when turning.
+    if (drive_pos_heading < M_PI/2 + HEADING_TOLERANCE/2 && drive_pos_heading > M_PI/2 - HEADING_TOLERANCE/2){
+      // Turn turret, then go SEARCHING
+      Turret_Set_Angle(0);
+      fsm_state = FSM_STATE_WAIT_TURRET;
+      fsm_next_state = FSM_STATE_NORTH;
+    }
     break;
 
     case FSM_STATE_DONE:
