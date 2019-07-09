@@ -686,7 +686,7 @@ void Turret_Set_Angle (int8_t new_angle)
 	now = micros();
 	if (turret_arrive_time < now)
 		turret_arrive_time = now;
-	turret_arrive_time += abs (new_angle-turret_angle)*2000 + 25000;
+	turret_arrive_time += abs (new_angle-turret_angle)*4000 + 25000;
 	turret_angle = new_angle;
 }  /* Turret_Set_Angle */
 
@@ -1018,15 +1018,15 @@ enum  fsm_state_enum {
   FSM_STATE_DONE = 99, // Terminal state
 };
 
-int8_t  fsm_state = FSM_STATE_IDLE;
+int8_t  fsm_state = FSM_STATE_START;
 int8_t  fsm_next_state; // Used only for Auto-advance states
 uint32_t  fsm_micros_timeout; // Used for WAIT_MICROS state
 
 // TODO: Test and set field variables and bot thresholds
 const int8_t FIELD_HEIGHT = 72; // Records height of field
-const int8_t CLOSE_THRESHOLD = 3; // Determines when to stop approaching obstacle in NORTH state
-const int8_t FAR_THRESHOLD = 5; // Determines when a gap has been reached in SEARCHING state
-const int8_t HEADING_TOLERANCE = M_PI / 12; // Tolerance used to detect direction of heading
+const int8_t CLOSE_THRESHOLD = 5; // Determines when to stop approaching obstacle in NORTH state
+const int8_t FAR_THRESHOLD = 7; // Determines when a gap has been reached in SEARCHING state
+const int8_t HEADING_TOLERANCE = M_PI / 6; // Tolerance used to detect direction of heading
 const int8_t DRIVE_SPEED = 50; // Determines the default drive speed set in FSM
 int8_t INIT_DIST_TO_LEFT_WALL; // Used to decide whether to turn left or right
 int8_t INIT_DIST_TO_RIGHT_WALL; // Used to decide whether to turn left or right
@@ -1060,7 +1060,8 @@ void Fsm_Run ()
       return;
     }
   }
-
+  Serial.print("FSM STATE: ");
+  Serial.println(fsm_state);
   switch (fsm_state) {
     case FSM_STATE_IDLE:
     break;
@@ -1098,14 +1099,22 @@ void Fsm_Run ()
       fsm_state = FSM_STATE_DONE;
     }
     // Otherwise, if the bot reaches an obstacle...
-    else if (ping_dist[0] < CLOSE_THRESHOLD){
+    else if (ping_dist[0] > 0 && ping_dist[0] < CLOSE_THRESHOLD){
       // If closer to right wall, turn left
       if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x){
         fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
+        Serial.print("North -> Turning Left. Ping dist: ");
+        Serial.println(ping_dist[0]);
+        Serial.print("Close threshold: ");
+        Serial.println(CLOSE_THRESHOLD);
       }
       // If closer to left wall, turn right
       else{
         fsm_state = FSM_STATE_RIGHT_AFTER_NORTH;
+        Serial.print("North -> Turning Right. Ping dist: ");
+        Serial.println(ping_dist[0]);
+        Serial.print("Close threshold: ");
+        Serial.println(CLOSE_THRESHOLD);
       }
     }
     // Otherwise, remain in NORTH state
