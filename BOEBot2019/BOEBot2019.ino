@@ -513,6 +513,21 @@ void Nav_Set_Target (struct nav_target_t *target)
 
 /******************************************************************************/
 
+void Nav_Set_Target2 (int8_t type, int16_t speed, float param1, float param2, float tol)
+{
+  struct nav_target_t target;
+
+  target.type = type;
+  target.speed  = speed;
+  target.param1 = param1;
+  target.param2 = param2;
+  target.tol  = tol;
+
+  Nav_Set_Target (&target);
+}  /* Nav_Set_Target2 */
+
+/******************************************************************************/
+
 int8_t Nav_Next_Target ()
 {
   struct nav_target_t target;
@@ -747,28 +762,13 @@ volatile uint32_t ping_timeout;
 
 int8_t  ping_dist[10];    // Data for last 10 pings; [0] is most recent.
 
-int ping_avg_5() {
-  int sum = 0;
-  for (int i = 0; i < 5; i++) {
-    sum += ping_dist[i];
-  }
-
-  return sum / 5;
-}
-
-int ping_avg_10() {
-  int sum = 0;
-  for (int i = 0; i < 10; i++) {
-    sum += ping_dist[i];
-  }
-
-  return sum / 10;
-}
 // 1-126 is measured distance in inches
 // -3, -2, -1, 0, & 127 are same as ping_state.
 int8_t  ping_angle[10];   // Turret angle setting when ping was done.
-int8_t  ping_sort5 [ 5];  // Indicies into results arrays of most recent  5 pings (sorted)
+int8_t  ping_sort5 [5];   // Indicies into results arrays of most recent  5 pings (sorted)
 int8_t  ping_sort10[10];  // Indicies into results arrays of most recent 10 pings (sorted)
+int8_t  ping_avg5 = 0;        // Average of last 5 pings
+int8_t  ping_avg10 = 0;       // Average of last 10 pings
 
 /******************************************************************************/
 
@@ -902,6 +902,18 @@ void Ping_Results () {
     if (ping_sort10[i] <= 4)
       ping_sort5[j++] = ping_sort10[i];
   }
+
+  // Calculate averages
+  int8_t sum5 = 0;
+  int8_t sum10 = 10;
+  for(i = 0; i<10; i++){
+    if(i<5){
+      sum5 += ping_dist[i];
+    }
+    sum10 += ping_dist[i];
+  }
+  ping_avg5 = sum5 / 5;
+  ping_avg10 = sum10 / 10;
 }  /* Ping_Results */
 
 /******************************************************************************
@@ -1093,14 +1105,16 @@ void Fsm_Run ()
     case FSM_STATE_LOOK_LEFT:
       Drive_Set_Speed(0, 0);
       Turret_Set_Angle (-90);
-      fsm_state = FSM_STATE_WAIT_TURRET;
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 500000; // 0.5 seconds
       fsm_next_state = FSM_STATE_LOOK_RIGHT;
       break;
 
     case FSM_STATE_LOOK_RIGHT:
       INIT_DIST_TO_LEFT_WALL = ping_dist[0]; // read distance to left wall
       Turret_Set_Angle (90);
-      fsm_state = FSM_STATE_WAIT_TURRET;
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 500000; // 0.5 seconds
       fsm_next_state = FSM_STATE_CALIBRATION_DONE;
       break;
 
@@ -1118,7 +1132,7 @@ void Fsm_Run ()
         fsm_state = FSM_STATE_DONE;
       }
       // Otherwise, if the bot reaches an obstacle...
-      else if (ping_avg_5() > 0 && ping_avg_5() < CLOSE_THRESHOLD) {
+      else if (ping_avg5 < CLOSE_THRESHOLD) {
         // If closer to right wall, turn left
         if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x) {
           fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
@@ -1131,7 +1145,7 @@ void Fsm_Run ()
         else {
           fsm_state = FSM_STATE_RIGHT_AFTER_NORTH;
           Serial.print("North -> Turning Right. Ping dist: ");
-          Serial.println(ping_avg_5());
+          Serial.println(ping_avg5);
           Serial.print("Close threshold: ");
           Serial.println(CLOSE_THRESHOLD);
         }
@@ -1140,18 +1154,16 @@ void Fsm_Run ()
       break;
 
     case FSM_STATE_RIGHT_AFTER_NORTH:
-      Drive_Set_Speed(90, -90);
       Turret_Set_Angle(-90);
-      fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = micros() + 750000;
+      Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, -90, -1.0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_SEARCHING;
       break;
 
     case FSM_STATE_LEFT_AFTER_NORTH:
-      Drive_Set_Speed(-90, 90);
       Turret_Set_Angle(90);
-      fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = micros() + 750000;
+      Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, 90, -1.0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_SEARCHING;
       break;
 
@@ -1162,12 +1174,12 @@ void Fsm_Run ()
         fsm_state = FSM_STATE_SEARCHING_REVERSE;
       }
       // Otherwise, if the bot reaches a gap...
-      else if (ping_avg_5() > FAR_THRESHOLD) {
+      else if (ping_avg5 > FAR_THRESHOLD) {
         // If heading east (0 radians), turn left
         if (drive_pos_heading < HEADING_TOLERANCE && drive_pos_heading > HEADING_TOLERANCE) {
           fsm_state = FSM_STATE_LEFT_AFTER_SEARCHING;
           Serial.print("Searching -> Turning Left. Ping dist: ");
-          Serial.println(ping_avg_5());
+          Serial.println(ping_avg5);
           Serial.print("Far threshold: ");
           Serial.println(FAR_THRESHOLD);
         }
@@ -1175,7 +1187,7 @@ void Fsm_Run ()
         else {
           fsm_state = FSM_STATE_RIGHT_AFTER_SEARCHING;
           Serial.print("Searching -> Turning Right. Ping dist: ");
-          Serial.println(ping_avg_5());
+          Serial.println(ping_avg5);
           Serial.print("Far threshold: ");
           Serial.println(FAR_THRESHOLD);
         }
@@ -1186,7 +1198,7 @@ void Fsm_Run ()
     case FSM_STATE_SEARCHING_REVERSE:
       Drive_Set_Speed(-DRIVE_SPEED, -DRIVE_SPEED); // Drive backwards
       // If the bot reaches a gap...
-      if (ping_avg_5() > FAR_THRESHOLD) {
+      if (ping_avg5 > FAR_THRESHOLD) {
         // If heading east (0 radians), turn left
         if (drive_pos_heading < 0 + HEADING_TOLERANCE && drive_pos_heading > 0 - HEADING_TOLERANCE) {
           fsm_state = FSM_STATE_LEFT_AFTER_SEARCHING;
