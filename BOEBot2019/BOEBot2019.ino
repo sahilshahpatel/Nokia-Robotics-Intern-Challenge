@@ -1038,6 +1038,10 @@ enum  fsm_state_enum {
   FSM_STATE_LOOK_LEFT,  // Check distance to left wall]
   FSM_STATE_CALIBRATION_DONE, // Set the turret to look North
   FSM_STATE_NORTH,    // Approach obstacle
+  FSM_STATE_TURRET_RIGHT_AFTER_NORTH, // Turn turret right (to 90 deg)
+  FSM_STATE_TURRET_LEFT_AFTER_NORTH,  // Turn turret left (to -90 deg)
+  FSM_STATE_TURRET_RIGHT_AFTER_SEARCHING, // Turn turret right (to 90 deg)
+  FSM_STATE_TURRET_LEFT_AFTER_SEARCHING,  // Turn turret left (to -90 deg)
   FSM_STATE_RIGHT_AFTER_NORTH,    // Turn robot right and turret left
   FSM_STATE_LEFT_AFTER_NORTH,   // Turn robot left and turret right
   FSM_STATE_SEARCHING,    // Drive along obstacle until gap is found
@@ -1057,6 +1061,7 @@ const int8_t FIELD_HEIGHT = 72; // Records height of field
 const int8_t CLOSE_THRESHOLD = 5; // Determines when to stop approaching obstacle in NORTH state
 const int8_t FAR_THRESHOLD = 10; // Determines when a gap has been reached in SEARCHING state
 const int8_t HEADING_TOLERANCE = M_PI / 6; // Tolerance used to detect direction of heading
+const int32_t TURRET_WAIT_MICROS = 500000; // 0.5 Seconds
 const int8_t DRIVE_SPEED = 50; // Determines the default drive speed set in FSM
 int8_t INIT_DIST_TO_LEFT_WALL; // Used to decide whether to turn left or right
 int8_t INIT_DIST_TO_RIGHT_WALL; // Used to decide whether to turn left or right
@@ -1091,7 +1096,9 @@ void Fsm_Run ()
     }
   }
   Serial.print("FSM STATE: ");
-  Serial.println(fsm_state);
+  Serial.print(fsm_state);
+  Serial.print("  |  Ping avg5: ");
+  Serial.println(ping_avg5);
   switch (fsm_state) {
     case FSM_STATE_IDLE:
       break;
@@ -1106,7 +1113,7 @@ void Fsm_Run ()
       Drive_Set_Speed(0, 0);
       Turret_Set_Angle (-90);
       fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = micros() + 500000; // 0.5 seconds
+      fsm_micros_timeout = micros() + TURRET_WAIT_MICROS;
       fsm_next_state = FSM_STATE_LOOK_RIGHT;
       break;
 
@@ -1114,7 +1121,7 @@ void Fsm_Run ()
       INIT_DIST_TO_LEFT_WALL = ping_dist[0]; // read distance to left wall
       Turret_Set_Angle (90);
       fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = micros() + 500000; // 0.5 seconds
+      fsm_micros_timeout = micros() + TURRET_WAIT_MICROS;
       fsm_next_state = FSM_STATE_CALIBRATION_DONE;
       break;
 
@@ -1137,7 +1144,7 @@ void Fsm_Run ()
         if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x) {
           fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
           Serial.print("North -> Turning Left. Ping dist: ");
-          Serial.println(ping_dist[0]);
+          Serial.println(ping_avg5);
           Serial.print("Close threshold: ");
           Serial.println(CLOSE_THRESHOLD);
         }
@@ -1152,18 +1159,32 @@ void Fsm_Run ()
       }
       // Otherwise, remain in NORTH state
       break;
-
+    
     case FSM_STATE_RIGHT_AFTER_NORTH:
       Turret_Set_Angle(-90);
       Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, -90, -1.0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
-      fsm_next_state = FSM_STATE_SEARCHING;
+      fsm_next_state = FSM_STATE_TURRET_LEFT_AFTER_NORTH;
       break;
 
     case FSM_STATE_LEFT_AFTER_NORTH:
       Turret_Set_Angle(90);
       Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, 90, -1.0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_TURRET_RIGHT_AFTER_NORTH;
+      break;
+      
+    case FSM_STATE_TURRET_RIGHT_AFTER_NORTH:
+      Turret_Set_Angle(-90);
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = TURRET_WAIT_MICROS;
+      fsm_next_state = FSM_STATE_SEARCHING;
+      break;
+
+    case FSM_STATE_TURRET_LEFT_AFTER_NORTH:
+      Turret_Set_Angle(90);
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = TURRET_WAIT_MICROS;
       fsm_next_state = FSM_STATE_SEARCHING;
       break;
 
