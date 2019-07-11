@@ -767,8 +767,8 @@ int8_t  ping_dist[10];    // Data for last 10 pings; [0] is most recent.
 int8_t  ping_angle[10];   // Turret angle setting when ping was done.
 int8_t  ping_sort5 [5];   // Indicies into results arrays of most recent  5 pings (sorted)
 int8_t  ping_sort10[10];  // Indicies into results arrays of most recent 10 pings (sorted)
-int8_t  ping_avg5 = 0;        // Average of last 5 pings
-int8_t  ping_avg10 = 0;       // Average of last 10 pings
+float  ping_avg5 = 0;        // Average of last 5 pings
+float  ping_avg10 = 0;       // Average of last 10 pings
 
 /******************************************************************************/
 
@@ -904,16 +904,16 @@ void Ping_Results () {
   }
 
   // Calculate averages
-  int8_t sum5 = 0;
-  int8_t sum10 = 10;
+  int16_t sum5 = 0;
+  int16_t sum10 = 10;
   for(i = 0; i<10; i++){
     if(i<5){
       sum5 += ping_dist[i];
     }
     sum10 += ping_dist[i];
   }
-  ping_avg5 = sum5 / 5;
-  ping_avg10 = sum10 / 10;
+  ping_avg5 = sum5 / 5.0;
+  ping_avg10 = sum10 / 10.0;
 }  /* Ping_Results */
 
 /******************************************************************************
@@ -1040,8 +1040,7 @@ enum  fsm_state_enum {
   FSM_STATE_NORTH,    // Approach obstacle
   FSM_STATE_TURRET_RIGHT_AFTER_NORTH, // Turn turret right (to 90 deg)
   FSM_STATE_TURRET_LEFT_AFTER_NORTH,  // Turn turret left (to -90 deg)
-  FSM_STATE_TURRET_RIGHT_AFTER_SEARCHING, // Turn turret right (to 90 deg)
-  FSM_STATE_TURRET_LEFT_AFTER_SEARCHING,  // Turn turret left (to -90 deg)
+  FSM_STATE_TURRET_CENTER_AFTER_SEARCHING,  // Turn turret to center
   FSM_STATE_RIGHT_AFTER_NORTH,    // Turn robot right and turret left
   FSM_STATE_LEFT_AFTER_NORTH,   // Turn robot left and turret right
   FSM_STATE_SEARCHING,    // Drive along obstacle until gap is found
@@ -1055,13 +1054,13 @@ enum  fsm_state_enum {
 int8_t  fsm_state = FSM_STATE_START;
 int8_t  fsm_next_state; // Used only for Auto-advance states
 uint32_t  fsm_micros_timeout; // Used for WAIT_MICROS state
+boolean turned_right_after_north; // Tells us how to turn after SEARCHING
 
 // TODO: Test and set field variables and bot thresholds
 const int8_t FIELD_HEIGHT = 72; // Records height of field
 const int8_t CLOSE_THRESHOLD = 5; // Determines when to stop approaching obstacle in NORTH state
 const int8_t FAR_THRESHOLD = 10; // Determines when a gap has been reached in SEARCHING state
-const int8_t HEADING_TOLERANCE = M_PI / 6; // Tolerance used to detect direction of heading
-const int32_t TURRET_WAIT_MICROS = 500000; // 0.5 Seconds
+const int32_t TURRET_WAIT_MICROS = 2000000; // 2 seconds
 const int8_t DRIVE_SPEED = 50; // Determines the default drive speed set in FSM
 int8_t INIT_DIST_TO_LEFT_WALL; // Used to decide whether to turn left or right
 int8_t INIT_DIST_TO_RIGHT_WALL; // Used to decide whether to turn left or right
@@ -1133,16 +1132,18 @@ void Fsm_Run ()
       break;
 
     case FSM_STATE_NORTH:
-      Drive_Set_Speed(DRIVE_SPEED, DRIVE_SPEED); // Drive forward
+      Drive_Set_Speed(DRIVE_SPEED, DRIVE_SPEED + 5); // Drive forward
       // If moved far enough North to be done, exit
       if (drive_pos_y > FIELD_HEIGHT) {
         fsm_state = FSM_STATE_DONE;
       }
       // Otherwise, if the bot reaches an obstacle...
-      else if (ping_avg5 < CLOSE_THRESHOLD) {
+      else if (ping_avg5 > 0 && 
+      ping_avg5 < CLOSE_THRESHOLD) {
         // If closer to right wall, turn left
         if (INIT_DIST_TO_LEFT_WALL + drive_pos_x > INIT_DIST_TO_RIGHT_WALL - drive_pos_x) {
           fsm_state = FSM_STATE_LEFT_AFTER_NORTH;
+          turned_right_after_north = false;
           Serial.print("North -> Turning Left. Ping dist: ");
           Serial.println(ping_avg5);
           Serial.print("Close threshold: ");
@@ -1151,6 +1152,7 @@ void Fsm_Run ()
         // If closer to left wall, turn right
         else {
           fsm_state = FSM_STATE_RIGHT_AFTER_NORTH;
+          turned_right_after_north = true;
           Serial.print("North -> Turning Right. Ping dist: ");
           Serial.println(ping_avg5);
           Serial.print("Close threshold: ");
@@ -1161,30 +1163,30 @@ void Fsm_Run ()
       break;
     
     case FSM_STATE_RIGHT_AFTER_NORTH:
-      Turret_Set_Angle(-90);
       Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, -90, -1.0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_TURRET_LEFT_AFTER_NORTH;
       break;
 
     case FSM_STATE_LEFT_AFTER_NORTH:
-      Turret_Set_Angle(90);
       Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, 90, -1.0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_TURRET_RIGHT_AFTER_NORTH;
       break;
       
     case FSM_STATE_TURRET_RIGHT_AFTER_NORTH:
-      Turret_Set_Angle(-90);
+      Drive_Set_Speed(0, 0);
+      Turret_Set_Angle(90);
       fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = TURRET_WAIT_MICROS;
+      fsm_micros_timeout = micros() + TURRET_WAIT_MICROS;
       fsm_next_state = FSM_STATE_SEARCHING;
       break;
 
     case FSM_STATE_TURRET_LEFT_AFTER_NORTH:
-      Turret_Set_Angle(90);
+      Drive_Set_Speed(0, 0);
+      Turret_Set_Angle(-90);
       fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = TURRET_WAIT_MICROS;
+      fsm_micros_timeout = micros() + TURRET_WAIT_MICROS;
       fsm_next_state = FSM_STATE_SEARCHING;
       break;
 
@@ -1197,7 +1199,9 @@ void Fsm_Run ()
       // Otherwise, if the bot reaches a gap...
       else if (ping_avg5 > FAR_THRESHOLD) {
         // If heading east (0 radians), turn left
-        if (drive_pos_heading < HEADING_TOLERANCE && drive_pos_heading > HEADING_TOLERANCE) {
+        Serial.print("Bot Heading: ");
+        Serial.println(drive_pos_heading);
+        if (turned_right_after_north) {
           fsm_state = FSM_STATE_LEFT_AFTER_SEARCHING;
           Serial.print("Searching -> Turning Left. Ping dist: ");
           Serial.println(ping_avg5);
@@ -1221,33 +1225,43 @@ void Fsm_Run ()
       // If the bot reaches a gap...
       if (ping_avg5 > FAR_THRESHOLD) {
         // If heading east (0 radians), turn left
-        if (drive_pos_heading < 0 + HEADING_TOLERANCE && drive_pos_heading > 0 - HEADING_TOLERANCE) {
-          fsm_state = FSM_STATE_LEFT_AFTER_SEARCHING;
+        if (turned_right_after_north) {
+          // Continue driving for 1 second
+          fsm_state = FSM_STATE_WAIT_MICROS;
+          fsm_micros_timeout = micros() + 1000000;
+          fsm_next_state = FSM_STATE_LEFT_AFTER_SEARCHING;
         }
         // If heading west (PI radians), turn right
         else {
-          fsm_state = FSM_STATE_RIGHT_AFTER_SEARCHING;
+          // Continue driving for 1 second
+          fsm_state = FSM_STATE_WAIT_MICROS;
+          fsm_micros_timeout = micros() + 1000000;
+          fsm_next_state = FSM_STATE_RIGHT_AFTER_SEARCHING;
         }
       }
       // Otherwise, remain in SEARCHING_REVERSE state
       break;
 
     case FSM_STATE_RIGHT_AFTER_SEARCHING:
-      Drive_Set_Speed(80, -80);
-      Turret_Set_Angle(-90);
-      fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = micros() + 1000000;
-      fsm_next_state = FSM_STATE_NORTH;
+      Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, -90, -1.0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_TURRET_CENTER_AFTER_SEARCHING;
       break;
 
     case FSM_STATE_LEFT_AFTER_SEARCHING:
-      Drive_Set_Speed(-80, 80);
-      Turret_Set_Angle(90);
-      fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = micros() + 1000000;
-      fsm_next_state = FSM_STATE_NORTH;
+      Nav_Set_Target2(NAV_TURN, DRIVE_SPEED, 90, -1.0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_TURRET_CENTER_AFTER_SEARCHING;
       break;
 
+    case FSM_STATE_TURRET_CENTER_AFTER_SEARCHING:
+      Drive_Set_Speed(0, 0);
+      Turret_Set_Angle(0);
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + TURRET_WAIT_MICROS;
+      fsm_next_state = FSM_STATE_NORTH;
+      break;
+    
     case FSM_STATE_DONE:
       Drive_Set_Speed (0, 0);
       turret_state = TURRET_STATE_IDLE;
