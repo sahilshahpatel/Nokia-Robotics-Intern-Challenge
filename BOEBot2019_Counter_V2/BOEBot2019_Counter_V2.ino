@@ -1,4 +1,4 @@
-ut // TLC Summer Intern Robot Challenge template software, Version 2019-07-02
+// TLC Summer Intern Robot Challenge template software, Version 2019-07-02
 // Lyle Kipp and Alejandro Kapauan
 //
 // Software for a Parallax BoE-Bot controlled by an Arduino Uno, including:
