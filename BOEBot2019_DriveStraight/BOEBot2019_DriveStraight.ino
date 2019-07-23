@@ -1077,7 +1077,7 @@ void Fsm_Run ()
 
     case FSM_STATE_START:
       turret_state = TURRET_STATE_IDLE;
-      Drive_Set_Speed(90, 90);
+      Drive_Set_Speed(0, 0);
       break;
    
     case FSM_STATE_DONE:

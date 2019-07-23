@@ -1053,6 +1053,7 @@ float reflector_x, reflector_y;
 /******************************************************************************/
 void Fsm_Run ()
 {
+  Serial.println(fsm_state);
   if (fsm_state < 0) {
     switch (fsm_state) {
       case FSM_STATE_WAIT_NAV:
@@ -1098,14 +1099,14 @@ void Fsm_Run ()
 
     case FSM_STATE_FACE_EAST:
       Serial.println("Facing East");
-      Nav_Set_Target2(NAV_HEAD, 50, 0, -1, 1);
+      Nav_Set_Target2(NAV_HEAD, 50, 0, -1, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_DRIVE_CIRCLE;
       break;
 
     case FSM_STATE_DRIVE_CIRCLE:
       Serial.println("Driving around circle");
-      Nav_Set_Target2(NAV_TURN, 90, 360, 0.1, 1); // TODO: test this ratio number
+      Nav_Set_Target2(NAV_TURN, 90, 360, 0.75, 0); // TODO: test this ratio number
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_FACE_SOUTH;
 
