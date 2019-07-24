@@ -1034,12 +1034,21 @@ enum  fsm_state_enum {
   //----- Auto-advance states above; regular states below
   FSM_STATE_IDLE    =  0,
   FSM_STATE_START,    // Initial state when FSM is used
-  FSM_STATE_TO_CIRCLE, // Travel to edge of circle
+  FSM_STATE_TO_SQUARE, // Travel to edge of circle
   FSM_STATE_FACE_EAST, // Face east
+  FSM_STATE_DRIVE_SQUARE1, // Drive around full circle
   FSM_STATE_FACE_SOUTH, // Face south
-  FSM_STATE_DRIVE_CIRCLE, // Drive around full circle
+  FSM_STATE_DRIVE_SQUARE2, // Drive around full circle
+  FSM_STATE_FACE_WEST, // Face south
+  FSM_STATE_DRIVE_SQUARE3, // Drive around full circle
+  FSM_STATE_FACE_NORTH, // Face south
+  FSM_STATE_DRIVE_SQUARE4, // Drive around full circle
+  FSM_STATE_FACE_EAST2, // Face south
+  FSM_STATE_DRIVE_SQUARE5, // Drive around full circle
+  FSM_STATE_FACE_SOUTH2, // Face south
   FSM_STATE_TURN_TO_SCAN, // Turn turret to scan_angle
   FSM_STATE_SCAN,         // Read ping_dist, act accordingly
+  FSM_STATE_FACE_PARK,    // Face final reflector
   FSM_STATE_PARK,         // Park at final reflector
   FSM_STATE_DONE = 99, // Terminal state
 };
@@ -1048,12 +1057,13 @@ int8_t  fsm_state = FSM_STATE_START;
 int8_t  fsm_next_state; // Used only for Auto-advance states
 uint32_t  fsm_micros_timeout; // Used for WAIT_MICROS state
 int8_t scan_angle = -60;
-float reflector_x, reflector_y;
+float reflector_dist, reflector_angle;
+const int8_t DRIVE_SPEED = 100;
+const int8_t SQUARE_S = 76;
 
 /******************************************************************************/
 void Fsm_Run ()
 {
-  Serial.println(fsm_state);
   if (fsm_state < 0) {
     switch (fsm_state) {
       case FSM_STATE_WAIT_NAV:
@@ -1087,12 +1097,12 @@ void Fsm_Run ()
     case FSM_STATE_START:
       turret_state = TURRET_STATE_IDLE;
       Drive_Set_Speed(0, 0);
-      fsm_state = FSM_STATE_TO_CIRCLE;
+      fsm_state = FSM_STATE_TO_SQUARE;
       break;
 
-    case FSM_STATE_TO_CIRCLE:
-      Serial.println("Moving to (0, 36)");
-      Nav_Set_Target2(NAV_COORD, 90, 0, 36, 1);
+    case FSM_STATE_TO_SQUARE:
+      Serial.println("Moving to square edge");
+      Nav_Set_Target2(NAV_COORD, 90, 0, SQUARE_S/2, 1);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_FACE_EAST;
       break;
@@ -1101,17 +1111,74 @@ void Fsm_Run ()
       Serial.println("Facing East");
       Nav_Set_Target2(NAV_HEAD, 50, 0, -1, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
-      fsm_next_state = FSM_STATE_DRIVE_CIRCLE;
+      fsm_next_state = FSM_STATE_DRIVE_SQUARE1;
       break;
 
-    case FSM_STATE_DRIVE_CIRCLE:
-      Serial.println("Driving around circle");
-      Nav_Set_Target2(NAV_TURN, 90, 360, 0.75, 0); // TODO: test this ratio number
+    case FSM_STATE_DRIVE_SQUARE1:
+      Serial.println("Drive Square 1");
+      Nav_Set_Target2(NAV_FORWARD, DRIVE_SPEED, SQUARE_S/2, 0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_FACE_SOUTH;
+      break;
 
     case FSM_STATE_FACE_SOUTH:
       Serial.println("Facing South");
+      Nav_Set_Target2(NAV_HEAD, 50, 270, -1, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_DRIVE_SQUARE2;
+      break;
+
+    case FSM_STATE_DRIVE_SQUARE2:
+      Serial.println("Drive Square 2");
+      Nav_Set_Target2(NAV_FORWARD, DRIVE_SPEED, SQUARE_S, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_FACE_WEST;
+      break;
+
+    case FSM_STATE_FACE_WEST:
+      Serial.println("Facing West");
+      Nav_Set_Target2(NAV_HEAD, 50, 180, -1, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_DRIVE_SQUARE3;
+      break;
+
+    case FSM_STATE_DRIVE_SQUARE3:
+      Serial.println("Drive Square 3");
+      Nav_Set_Target2(NAV_FORWARD, DRIVE_SPEED, SQUARE_S, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_FACE_NORTH;
+      break;
+
+    case FSM_STATE_FACE_NORTH:
+      Serial.println("Facing North");
+      Nav_Set_Target2(NAV_HEAD, 50, 90, -1, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_DRIVE_SQUARE4;
+      break;
+
+    case FSM_STATE_DRIVE_SQUARE4:
+      Serial.println("Drive Square 4");
+      Nav_Set_Target2(NAV_FORWARD, DRIVE_SPEED, SQUARE_S, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_FACE_EAST2;
+      break;
+
+    case FSM_STATE_FACE_EAST2:
+      Serial.println("Facing East 2");
+      Nav_Set_Target2(NAV_HEAD, 50, 0, -1, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_DRIVE_SQUARE5;
+      break;
+
+    case FSM_STATE_DRIVE_SQUARE5:
+      Serial.println("Drive Square 5");
+      Nav_Set_Target2(NAV_FORWARD, DRIVE_SPEED, SQUARE_S/2, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_FACE_SOUTH2;
+      break;
+
+    case FSM_STATE_FACE_SOUTH2:
+      Serial.println("Facing South 2");
       Nav_Set_Target2(NAV_HEAD, 50, 270, -1, 1);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_SCAN;
@@ -1122,37 +1189,47 @@ void Fsm_Run ()
       Serial.println(scan_angle);
       Turret_Set_Angle(scan_angle);
       fsm_state = FSM_STATE_WAIT_MICROS;
-      fsm_micros_timeout = micros() + 2000000;
+      fsm_micros_timeout = micros() + 500000;
       fsm_next_state = FSM_STATE_SCAN;
       if(scan_angle > 60){
         // TODO: change this to make a second circle around if scan fails
         Serial.println("Scan failed.");
         fsm_state = FSM_STATE_DONE;
       }
+      break;
     
     case FSM_STATE_SCAN:
-      Serial.print("Scan reads: ");
-      Serial.println(ping_dist[0]);
-      if(ping_dist[0] < 72 && ping_dist[0] > 0){
-        int8_t angle = drive_pos_heading - turret_angle;
-        int8_t dist = ping_dist[0] - 1; // Park before hitting reflector
-        reflector_x = drive_pos_x + dist*cos(angle);
-        reflector_y = drive_pos_y + dist*sin(angle);
-        fsm_state = FSM_STATE_PARK;
+      //Serial.print("Scan reads: ");
+      //Serial.println(ping_dist[0]);
+      if(ping_avg5 < 50 && ping_avg5 > 0){
+        Serial.print("Scan reads YES: ");
+        Serial.println(ping_avg5);
+        reflector_angle = 90 - turret_angle;
+        reflector_dist = ping_avg5;
+        fsm_state = FSM_STATE_FACE_PARK;
       }
       else{
-        scan_angle += 5;
+        Serial.print("Scan reads NO: ");
+        Serial.println(ping_avg5);
+        scan_angle += 30;
         fsm_state = FSM_STATE_TURN_TO_SCAN;
       }
+      break;
+
+    case FSM_STATE_FACE_PARK:
+      Serial.println("Reflector found");
+      Nav_Set_Target2(NAV_HEAD, 50, 90 - turret_angle, -1, 1);
+      //Nav_Set_Target2(NAV_COORD, 30, reflector_x, reflector_y, 5);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_PARK;
+      break;
 
     case FSM_STATE_PARK:
-      Serial.print("Reflector found. Parking at: ");
-      Serial.print(reflector_x);
-      Serial.print(", ");
-      Serial.println(reflector_y);
-      Nav_Set_Target2(NAV_COORD, 90, reflector_x, reflector_y, 1);
+      Serial.println("Parking...");
+      Nav_Set_Target2(NAV_FORWARD, 100, reflector_dist - 5, 0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_DONE;
+      break;
     
     case FSM_STATE_DONE:
       Drive_Set_Speed (0, 0);
