@@ -1114,6 +1114,7 @@ void Fsm_Run ()
       else{
         fsm_next_state = FSM_STATE_START;
       }
+      break;
 
     case FSM_STATE_TO_SQUARE:
       Serial.println("Moving to square edge");

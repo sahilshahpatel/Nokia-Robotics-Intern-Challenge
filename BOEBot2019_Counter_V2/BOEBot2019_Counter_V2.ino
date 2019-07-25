@@ -1026,6 +1026,7 @@ enum  fsm_state_enum {
   //----- Auto-advance state above; regular states below
   FSM_STATE_IDLE    =  0,
   FSM_STATE_START,    // Initial state when FSM is used
+  FSM_STATE_FLAG_START, // Start on hand wave
   FSM_STATE_NEXT_TARGET,    // Retrieve next target and invoke Nav
   FSM_STATE_LOOK_LEFT,    // Set turret to -90 and ping 1 second
   FSM_STATE_LOOK_RIGHT,   // Set turret to  90 and ping 1 second
@@ -1103,7 +1104,19 @@ void Fsm_Run ()
     case FSM_STATE_START:
       turret_state = TURRET_STATE_IDLE;   // Disable conflicting functions
       nav_route_auto = FALSE;
-      fsm_state = FSM_STATE_TURN_AROUND;
+      fsm_state = FSM_STATE_FLAG_START;
+      break;
+
+    case FSM_STATE_FLAG_START:
+      // Logically, the Nav stuff shouldn't have to be here, but it works, so...
+      Nav_Set_Target2(NAV_COORD, 0, drive_pos_x, drive_pos_y, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      if(ping_dist[0] < 5){
+        fsm_next_state = FSM_STATE_TURN_AROUND;
+      }
+      else{
+        fsm_next_state = FSM_STATE_START;
+      }
       break;
 
     case FSM_STATE_TURN_AROUND:
