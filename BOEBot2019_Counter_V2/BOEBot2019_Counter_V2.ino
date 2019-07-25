@@ -526,7 +526,8 @@ void Nav_Set_Target2 (int8_t type, int16_t speed, float param1, float param2, fl
   Nav_Set_Target (&target);
 }  /* Nav_Set_Target2 */
 
-/******************************************************************************/
+/********************************************************************************/
+
 
 int8_t Nav_Next_Target ()
 {
@@ -701,7 +702,7 @@ void Turret_Set_Angle (int8_t new_angle)
   now = micros();
   if (turret_arrive_time < now)
     turret_arrive_time = now;
-  turret_arrive_time += abs (new_angle - turret_angle) * 4000 + 25000;
+  turret_arrive_time += abs (new_angle - turret_angle) * 2000 + 25000;
   turret_angle = new_angle;
 }  /* Turret_Set_Angle */
 
@@ -761,14 +762,17 @@ volatile uint32_t ping_echo_time;
 volatile uint32_t ping_timeout;
 
 int8_t  ping_dist[10];    // Data for last 10 pings; [0] is most recent.
-
 // 1-126 is measured distance in inches
 // -3, -2, -1, 0, & 127 are same as ping_state.
 int8_t  ping_angle[10];   // Turret angle setting when ping was done.
-int8_t  ping_sort5 [5];   // Indicies into results arrays of most recent  5 pings (sorted)
+int8_t  ping_sort5 [ 5];  // Indicies into results arrays of most recent  5 pings (sorted)
 int8_t  ping_sort10[10];  // Indicies into results arrays of most recent 10 pings (sorted)
-float  ping_avg5 = 0;        // Average of last 5 pings
-float  ping_avg10 = 0;       // Average of last 10 pings
+
+int8_t  reflector_1 = 0;
+int8_t  reflector_2 = 0;
+int8_t  reflector_3 = 0;
+int8_t  reflector_4 = 0;
+int8_t  total = 0;
 
 /******************************************************************************/
 
@@ -902,18 +906,6 @@ void Ping_Results () {
     if (ping_sort10[i] <= 4)
       ping_sort5[j++] = ping_sort10[i];
   }
-
-  // Calculate averages
-  int16_t sum5 = 0;
-  int16_t sum10 = 10;
-  for(i = 0; i<10; i++){
-    if(i<5){
-      sum5 += ping_dist[i];
-    }
-    sum10 += ping_dist[i];
-  }
-  ping_avg5 = sum5 / 5.0;
-  ping_avg10 = sum10 / 10.0;
 }  /* Ping_Results */
 
 /******************************************************************************
@@ -1031,18 +1023,49 @@ enum  fsm_state_enum {
   FSM_STATE_WAIT_NAV  = -3, // Wait for nav_state == ARRIVED
   FSM_STATE_WAIT_TURRET = -2, // Wait for turret rotation completion
   FSM_STATE_WAIT_MICROS = -1, // Wait for micros() >= fsm_micros_timeout
-  //----- Auto-advance states above; regular states below
+  //----- Auto-advance state above; regular states below
   FSM_STATE_IDLE    =  0,
   FSM_STATE_START,    // Initial state when FSM is used
-  FSM_STATE_DONE = 99, // Terminal state
+  FSM_STATE_NEXT_TARGET,    // Retrieve next target and invoke Nav
+  FSM_STATE_LOOK_LEFT,    // Set turret to -90 and ping 1 second
+  FSM_STATE_LOOK_RIGHT,   // Set turret to  90 and ping 1 second
+  FSM_STATE_TURN_WEST,
+  FSM_STATE_MOVE_WEST,
+  FSM_STATE_TURN_NORTH,
+  FSM_STATE_SCAN_FIRST,
+  FSM_STATE_SCAN_SECOND,
+  FSM_STATE_PREP_SCAN_FIRST,
+  FSM_STATE_PREP_SCAN_SECOND,
+  FSM_STATE_PRINT,
+  FSM_STATE_TURN_EAST,
+  FSM_STATE_TURN_SOUTH,
+  FSM_STATE_MOVE_EAST,
+  FSM_STATE_SCAN_THIRD,
+  FSM_STATE_SCAN_FOURTH,
+  FSM_STATE_MOVE_SOUTH,
+  FSM_STATE_MOVE_AROUND,
+  FSM_STATE_PREPARE_TURRET,
+  FSM_TURN_EAST,
+  FSM_STATE_DECIDE,
+  FSM_STATE_TURN_AROUND,
+  FSM_STATE_SCAN_FINAL,
+  FSM_STATE_SCAN_FINAL2,
+  FSM_STATE_TURN_LEFT,
+  FSM_STATE_TURN_LAST,
+  FSM_STATE_MOVE_LAST,
+  FSM_STATE_MOVE_LEFT,
+  FSM_STATE_TURN_SOUTH_PREP,
+  FSM_STATE_FIX,
+  FSM_STATE_etc,
+  FSM_STATE_DONE    = 99, // Terminal state
 };
 
 int8_t  fsm_state = FSM_STATE_START;
-int8_t  fsm_next_state; // Used only for Auto-advance states
-uint32_t  fsm_micros_timeout; // Used for WAIT_MICROS state
-boolean turned_right_after_north; // Tells us how to turn after SEARCHING
+int8_t  fsm_next_state;
+uint32_t  fsm_micros_timeout;
 
 /******************************************************************************/
+
 void Fsm_Run ()
 {
   if (fsm_state < 0) {
@@ -1071,16 +1094,178 @@ void Fsm_Run ()
       return;
     }
   }
+
   switch (fsm_state) {
     case FSM_STATE_IDLE:
+      Drive_Set_Speed(0,0);
       break;
 
     case FSM_STATE_START:
-      turret_state = TURRET_STATE_IDLE;
-      Drive_Set_Speed(0, 0);
+      turret_state = TURRET_STATE_IDLE;   // Disable conflicting functions
+      nav_route_auto = FALSE;
+      fsm_state = FSM_STATE_TURN_AROUND;
       break;
-   
+
+    case FSM_STATE_TURN_AROUND:
+      Nav_Set_Target2(NAV_TURN, 100, 160, -1, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_PREP_SCAN_FIRST;
+      break;
+
+    case FSM_STATE_PREP_SCAN_FIRST:
+      Drive_Set_Speed (0, 0);
+      Turret_Set_Angle(60);
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 100000;
+      fsm_next_state = FSM_STATE_PREPARE_TURRET;
+      break;
+
+    case FSM_STATE_PREPARE_TURRET:
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 100000;
+      if (ping_dist[0] <= 20) {
+        reflector_1 = 1;
+        //fsm_next_state = FSM_STATE_DONE;
+      }
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 100000;
+      fsm_next_state = FSM_STATE_TURN_EAST;
+      break;
+
+    case FSM_STATE_TURN_EAST:
+      Nav_Set_Target2(NAV_HEAD, 50, 0, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_MOVE_EAST;
+      break;
+
+    case FSM_STATE_MOVE_EAST:
+      Nav_Set_Target2(NAV_COORD, 100, drive_pos_x + 3, drive_pos_y+0, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_TURN_SOUTH;
+      break;
+
+    case FSM_STATE_TURN_SOUTH_PREP:
+    Drive_Set_Speed(0,0);
+    fsm_state = FSM_STATE_WAIT_MICROS;
+    fsm_micros_timeout = micros() + 100000;
+    fsm_next_state = FSM_STATE_SCAN_THIRD;
+    break;
+    
+    case FSM_STATE_TURN_SOUTH:
+      Nav_Set_Target2(NAV_HEAD, 50, 258, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_TURN_SOUTH_PREP;
+      break;
+
+    case FSM_STATE_SCAN_THIRD:
+      Turret_Set_Angle(-90);
+      Nav_Set_Target2(NAV_COORD, 100, drive_pos_x+0, drive_pos_y-2, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      //Serial.print(drive_pos_x);
+      if (ping_dist[0] <= 8) {
+        reflector_2 = 1;
+        Serial.print(reflector_3);
+      }
+      if (drive_pos_y <= -20) {
+        fsm_next_state = FSM_STATE_SCAN_FOURTH;
+      }
+      else {
+        fsm_next_state = FSM_STATE_SCAN_THIRD;
+      }
+      break;
+
+    case FSM_STATE_SCAN_FOURTH:
+      Nav_Set_Target2(NAV_COORD, 100, drive_pos_x+0, drive_pos_y - 2, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      if (ping_dist[0] <= 8) {
+        reflector_3 = 1;
+        Serial.print(reflector_4);
+      }
+      if (drive_pos_y <= -43) {
+        fsm_next_state = FSM_STATE_TURN_LAST;
+      }
+      else {
+        fsm_next_state = FSM_STATE_SCAN_FOURTH;
+      }
+      break;
+
+    case FSM_STATE_TURN_LAST:
+      Nav_Set_Target2(NAV_HEAD, 50, 180, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_MOVE_LEFT;
+      break;
+
+    case FSM_STATE_MOVE_LEFT:
+      Turret_Set_Angle(85);
+      Nav_Set_Target2(NAV_COORD, 100, -16, -46, -3);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_SCAN_FINAL;
+      Serial.print(drive_pos_x);
+      break;
+
+    case FSM_STATE_SCAN_FINAL:
+      Serial.print(drive_pos_x);
+      Drive_Set_Speed(0, 0);
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 100000;
+      fsm_next_state = FSM_STATE_SCAN_FINAL2;
+      break;
+
+    case FSM_STATE_SCAN_FINAL2:
+      Serial.print(drive_pos_x);
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 100000;
+      if (ping_dist[0] <= 25) {
+        reflector_4 = 1;
+      }
+      fsm_state = FSM_STATE_WAIT_MICROS;
+      fsm_micros_timeout = micros() + 100000;
+      fsm_next_state = FSM_STATE_DECIDE;
+      break;
+
+    case FSM_STATE_DECIDE:
+      
+      total = reflector_1 + reflector_2 + reflector_3 + reflector_4;
+      Serial.print(drive_pos_x);
+
+      if (total == 1) {
+        Turret_Set_Angle(-45);
+        Nav_Set_Target2(NAV_COORD, -100, -14, -46, 3);
+        fsm_state = FSM_STATE_WAIT_NAV;
+        fsm_next_state = FSM_STATE_DONE;
+      }
+      if (total == 2) {
+        Turret_Set_Angle(0);
+        Nav_Set_Target2(NAV_COORD, -100, -6, -46, -3);
+        fsm_state = FSM_STATE_WAIT_NAV;
+        fsm_next_state = FSM_STATE_DONE;
+      }
+      if (total == 3) {
+        Turret_Set_Angle(45);
+        Nav_Set_Target2(NAV_COORD, -100, 2, -46, -3);
+        fsm_state = FSM_STATE_WAIT_NAV;
+        fsm_next_state = FSM_STATE_DONE;
+      }
+      if (total == 4) {
+        Turret_Set_Angle(90);
+        Nav_Set_Target2(NAV_COORD, -100, 10, -46, -3);
+        fsm_state = FSM_STATE_WAIT_NAV;
+        fsm_next_state = FSM_STATE_DONE;
+      }
+      if (total == 0) {
+        Turret_Set_Angle(-90);
+        Nav_Set_Target2(NAV_COORD, 100, -22, -46, -3);
+        fsm_state = FSM_STATE_WAIT_NAV;
+        fsm_next_state = FSM_STATE_DONE;
+      }
+
+      break;
+
+    case FSM_STATE_etc:
+      break;
+
     case FSM_STATE_DONE:
+      Serial.print(total);
       Drive_Set_Speed (0, 0);
       turret_state = TURRET_STATE_IDLE;
       break;
@@ -1089,7 +1274,8 @@ void Fsm_Run ()
       // Probably should never get here.
       break;
   }
-} /* Fsm_Run */
+}
+/* Fsm_Run */
 
 /******************************************************************************
  ******************************************************************************
