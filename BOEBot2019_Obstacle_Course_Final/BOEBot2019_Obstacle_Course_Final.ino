@@ -772,6 +772,7 @@ int8_t  first_right_dist;
 int8_t  ctr = 0;
 int8_t  first_left_dist;
 int8_t  middle;
+int8_t  Turn_param_gap;
 int8_t  backwards_param;
 
 /******************************************************************************/
@@ -1043,6 +1044,7 @@ enum	fsm_state_enum {
   FSM_STATE_PREP_SCAN,
   FSM_STATE_BACK_SEARCH,
   FSM_STATE_BACK_SEARCH_PREP,
+  FSM_STATE_NEXT_TARGET_PREP,
   FSM_STATE_FLAG_START,
   FSM_STATE_CHOOSE,
 	FSM_STATE_etc,
@@ -1092,22 +1094,21 @@ void Fsm_Run ()
     Serial.print("FSM_STATE_START\n");
 		turret_state = TURRET_STATE_IDLE;		// Disable conflicting functions
 		nav_route_auto = FALSE;
-		fsm_state = FSM_STATE_FLAG_START;
+		fsm_state = FSM_STATE_SCAN_LEFT;
 		break;
 
     case FSM_STATE_FLAG_START:
+    Turret_Set_Angle(0);
     Nav_Set_Target2(NAV_COORD,0, drive_pos_x, drive_pos_y, 1);
     fsm_state = FSM_STATE_WAIT_NAV;
     if(ping_dist[0] <5)
     {
-      fsm_next_state = FSM_STATE_SCAN_LEFT;
+      fsm_next_state = FSM_STATE_NEXT_TARGET_PREP;
     }
     else{
-      fsm_next_state = FSM_STATE_START;      
+      fsm_next_state = FSM_STATE_FLAG_START;      
     }
     break;
-
-
 
     case FSM_STATE_SCAN_LEFT:
     Serial.print("FSM_STATE_SCAN_LEFT\n");
@@ -1145,6 +1146,14 @@ void Fsm_Run ()
     fsm_state = FSM_STATE_WAIT_MICROS;
     fsm_micros_timeout = micros() + 500000;
     middle = (starting_right_dist + starting_left_dist) /2 ;
+    fsm_next_state = FSM_STATE_FLAG_START;
+    break;
+
+    case FSM_STATE_NEXT_TARGET_PREP:
+    Nav_Set_Target2(NAV_COORD,0, drive_pos_x, drive_pos_y, 1);
+    fsm_state = FSM_STATE_WAIT_NAV;
+    fsm_state = FSM_STATE_WAIT_MICROS;
+    fsm_micros_timeout = micros() + 500000;
     fsm_next_state = FSM_STATE_NEXT_TARGET;
     break;
 
@@ -1157,7 +1166,7 @@ void Fsm_Run ()
     //Serial.print("\n");
     //Serial.print(starting_right_dist);
     if(ping_dist[0] < 10 && ping_dist[0] > 0){
-      if(drive_pos_x - middle < 0 && starting_left_dist < starting_right_dist){
+      if((drive_pos_x < (middle - starting_left_dist))){
         fsm_next_state = FSM_STATE_TURN_RIGHT_WALL;
       }
       else{
@@ -1192,7 +1201,7 @@ void Fsm_Run ()
     Nav_Set_Target2(NAV_HEAD, 100, 90, 0.0, 0);
     fsm_state = FSM_STATE_WAIT_NAV;
     Turret_Set_Angle (0);
-    Turn_param = 1;
+    Turn_param_gap = 1;
     fsm_next_state = FSM_STATE_PREP_SCAN;
     break;
 
@@ -1201,8 +1210,8 @@ void Fsm_Run ()
     Nav_Set_Target2(NAV_HEAD, 100, 90, 0.0, 0);
     fsm_state = FSM_STATE_WAIT_NAV;
     Turret_Set_Angle (0);
-    Turn_param = 0;
-    fsm_next_state = FSM_STATE_PREP_SCAN;
+    Turn_param_gap = 0;
+    fsm_next_state = FSM_STATE_NEXT_TARGET;
     break;
 
     case FSM_STATE_PREP_SCAN:
@@ -1252,11 +1261,11 @@ void Fsm_Run ()
     Serial.print(drive_pos_y);
     Serial.print("\n");   
     
-    if(drive_pos_x > first_right_dist - 10){
+    if(drive_pos_x > first_right_dist - 8){
       fsm_next_state = FSM_STATE_BACK_SEARCH_PREP;
       backwards_param = 1; // on east side
     }
-    if(drive_pos_x < -1*(first_left_dist - 10)){
+    if(drive_pos_x < -1*(first_left_dist - 8)){
       fsm_next_state = FSM_STATE_BACK_SEARCH_PREP; 
       backwards_param = 0; // on west side
     }
