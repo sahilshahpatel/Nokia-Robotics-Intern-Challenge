@@ -1136,7 +1136,7 @@ void Fsm_Run ()
     case FSM_STATE_PREPARE_TURRET:
       fsm_state = FSM_STATE_WAIT_MICROS;
       fsm_micros_timeout = micros() + 100000;
-      if (ping_dist[0] <= 20) {
+      if (ping_dist[0] <= 20  && ping_dist[0] > 0) {
         reflector_1 = 1;
         //fsm_next_state = FSM_STATE_DONE;
       }
@@ -1146,7 +1146,7 @@ void Fsm_Run ()
       break;
 
     case FSM_STATE_TURN_EAST:
-      Nav_Set_Target2(NAV_HEAD, 50, 0, 0, 0);
+      Nav_Set_Target2(NAV_HEAD, 100, 0, 0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_MOVE_EAST;
       break;
@@ -1165,7 +1165,7 @@ void Fsm_Run ()
     break;
     
     case FSM_STATE_TURN_SOUTH:
-      Nav_Set_Target2(NAV_HEAD, 50, 258, 0, 0);
+      Nav_Set_Target2(NAV_HEAD, 100, 258, 0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_TURN_SOUTH_PREP;
       break;
@@ -1175,7 +1175,7 @@ void Fsm_Run ()
       Nav_Set_Target2(NAV_COORD, 100, drive_pos_x+0, drive_pos_y-2, 1);
       fsm_state = FSM_STATE_WAIT_NAV;
       //Serial.print(drive_pos_x);
-      if (ping_dist[0] <= 8) {
+      if (ping_dist[0] <= 15 && ping_dist[0] > 0) {
         reflector_2 = 1;
         Serial.print(reflector_3);
       }
@@ -1190,7 +1190,7 @@ void Fsm_Run ()
     case FSM_STATE_SCAN_FOURTH:
       Nav_Set_Target2(NAV_COORD, 100, drive_pos_x+0, drive_pos_y - 2, 1);
       fsm_state = FSM_STATE_WAIT_NAV;
-      if (ping_dist[0] <= 8) {
+      if (ping_dist[0] <= 15 && ping_dist[0] > 0) {
         reflector_3 = 1;
         Serial.print(reflector_4);
       }
@@ -1203,7 +1203,7 @@ void Fsm_Run ()
       break;
 
     case FSM_STATE_TURN_LAST:
-      Nav_Set_Target2(NAV_HEAD, 50, 180, 0, 0);
+      Nav_Set_Target2(NAV_HEAD, 100, 180, 0, 0);
       fsm_state = FSM_STATE_WAIT_NAV;
       fsm_next_state = FSM_STATE_MOVE_LEFT;
       break;
@@ -1228,7 +1228,7 @@ void Fsm_Run ()
       Serial.print(drive_pos_x);
       fsm_state = FSM_STATE_WAIT_MICROS;
       fsm_micros_timeout = micros() + 100000;
-      if (ping_dist[0] <= 25) {
+      if (ping_dist[0] <= 25  && ping_dist[0] > 0) {
         reflector_4 = 1;
       }
       fsm_state = FSM_STATE_WAIT_MICROS;
