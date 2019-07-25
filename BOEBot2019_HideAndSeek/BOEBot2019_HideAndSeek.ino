@@ -1034,6 +1034,7 @@ enum  fsm_state_enum {
   //----- Auto-advance states above; regular states below
   FSM_STATE_IDLE    =  0,
   FSM_STATE_START,    // Initial state when FSM is used
+  FSM_STATE_FLAG_START,   // Start on hand wave
   FSM_STATE_TO_SQUARE, // Travel to edge of square
   FSM_STATE_FACE_EAST, // Face east
   FSM_STATE_DRIVE_SQUARE1, // Drive around square
@@ -1049,6 +1050,7 @@ enum  fsm_state_enum {
   FSM_STATE_WAIT_BEFORE_SCAN, // Wait before scanning
   FSM_STATE_TURN_TO_SCAN, // Turn turret to scan_angle
   FSM_STATE_SCAN,         // Read ping_dist, act accordingly
+  FSM_STATE_SCAN_FAILED,  // Move forward some and scan again
   FSM_STATE_FACE_PARK,    // Face final reflector
   FSM_STATE_PARK,         // Park at final reflector
   FSM_STATE_DONE = 99, // Terminal state
@@ -1057,7 +1059,8 @@ enum  fsm_state_enum {
 int8_t  fsm_state = FSM_STATE_START;
 int8_t  fsm_next_state; // Used only for Auto-advance states
 uint32_t  fsm_micros_timeout; // Used for WAIT_MICROS state
-int8_t scan_angle = -60;
+const int8_t INIT_SCAN_ANGLE = -60;
+int8_t scan_angle = INIT_SCAN_ANGLE;
 float reflector_dist, reflector_angle;
 const int8_t DRIVE_SPEED = 100;
 const int8_t SQUARE_S = 66;
@@ -1098,8 +1101,19 @@ void Fsm_Run ()
     case FSM_STATE_START:
       turret_state = TURRET_STATE_IDLE;
       Drive_Set_Speed(0, 0);
-      fsm_state = FSM_STATE_TO_SQUARE;
+      fsm_state = FSM_STATE_FLAG_START;
       break;
+
+    case FSM_STATE_FLAG_START:
+      // Logically, the Nav stuff shouldn't have to be here, but it works, so...
+      Nav_Set_Target2(NAV_COORD, 0, drive_pos_x, drive_pos_y, 1);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      if(ping_dist[0] < 5){
+        fsm_next_state = FSM_STATE_TO_SQUARE;
+      }
+      else{
+        fsm_next_state = FSM_STATE_START;
+      }
 
     case FSM_STATE_TO_SQUARE:
       Serial.println("Moving to square edge");
@@ -1199,11 +1213,18 @@ void Fsm_Run ()
       fsm_state = FSM_STATE_WAIT_MICROS;
       fsm_micros_timeout = micros() + 750000;
       fsm_next_state = FSM_STATE_SCAN;
-      if(scan_angle > 60){
-        // TODO: change this to make a second circle around if scan fails
-        Serial.println("Scan failed.");
-        fsm_state = FSM_STATE_DONE;
+      if(scan_angle > -INIT_SCAN_ANGLE){
+        Serial.println("Scan failed. Trying again.");
+        fsm_state = FSM_STATE_SCAN_FAILED;
       }
+      break;
+
+    case FSM_STATE_SCAN_FAILED:
+      scan_angle = INIT_SCAN_ANGLE;
+      // Move forward and scan again
+      Nav_Set_Target2(NAV_FORWARD, 100, 5, 0, 0);
+      fsm_state = FSM_STATE_WAIT_NAV;
+      fsm_next_state = FSM_STATE_TURN_TO_SCAN;
       break;
     
     case FSM_STATE_SCAN:
